@@ -4,7 +4,7 @@ import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import warnings
+import json, os, warnings
 warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="BIST Finansal Analiz", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
@@ -23,10 +23,9 @@ html,body,.stApp{background-color:#0a0f1a!important;color:#e2e8f0;font-family:'I
 .card-label{color:#64748b;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;font-weight:600;margin-bottom:.4rem;}
 .card-value{font-size:1.9rem;font-weight:800;line-height:1;}
 .card-value.green{color:#22c55e;}.card-value.yellow{color:#eab308;}.card-value.blue{color:#3b82f6;}.card-value.red{color:#ef4444;}.card-value.white{color:#f1f5f9;}
-.tbl-header{display:grid;grid-template-columns:40px 90px 1fr 95px 70px 70px 110px 110px 60px;gap:.5rem;padding:.5rem 1rem;color:#475569;font-size:.67rem;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid #1e2d42;margin-bottom:.4rem;font-weight:600;}
-.tbl-row{display:grid;grid-template-columns:40px 90px 1fr 95px 70px 70px 110px 110px 60px;gap:.5rem;align-items:center;padding:.8rem 1rem;background:#0f1626;border:1px solid #1a2540;border-radius:8px;margin-bottom:.35rem;}
+.tbl-header{display:grid;grid-template-columns:40px 1fr 95px 70px 70px 110px 110px;gap:.5rem;padding:.5rem 1rem;color:#475569;font-size:.67rem;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid #1e2d42;margin-bottom:.4rem;font-weight:600;}
+.tbl-row{display:grid;grid-template-columns:40px 1fr 95px 70px 70px 110px 110px;gap:.5rem;align-items:center;padding:.8rem 1rem;background:#0f1626;border:1px solid #1a2540;border-radius:8px;margin-bottom:.35rem;}
 .tbl-ticker{color:#f1f5f9;font-weight:800;font-size:.9rem;letter-spacing:.05em;}
-.tbl-sector{color:#64748b;font-size:.78rem;}
 .tbl-price{color:#22c55e;font-weight:700;font-size:.9rem;font-family:'JetBrains Mono',monospace;}
 .tbl-val{color:#94a3b8;font-size:.82rem;font-family:'JetBrains Mono',monospace;}
 .tbl-dcf{color:#3b82f6;font-size:.82rem;font-family:'JetBrains Mono',monospace;}
@@ -73,7 +72,8 @@ TICKER_MAP = {
     "AKSA AKRİLİK KİMYA SANAYİİ A.Ş.":"AKSA","AKSA ENERJİ ÜRETİM A.Ş.":"AKSEN",
     "AKENERJİ ELEKTRİK ÜRETİM A.Ş.":"AKENR","AKFEN HOLDİNG A.Ş.":"AKFEN",
     "ALARKO CARRIER SANAYİ VE TİCARET A.Ş.":"ALCAR","BAGFAŞ BANDIRMA GÜBRE FABRİKALARI A.Ş.":"BAGFS",
-    "BEŞİKTAŞ FUTBOL YATIRIMLARI SANAYİ VE TİCARET A.Ş.":"BJKAS","BRİSA BRİDGESTONE SABANCI LASTİK SANAYİ VE TİCARET A.Ş.":"BRISA",
+    "BEŞİKTAŞ FUTBOL YATIRIMLARI SANAYİ VE TİCARET A.Ş.":"BJKAS",
+    "BRİSA BRİDGESTONE SABANCI LASTİK SANAYİ VE TİCARET A.Ş.":"BRISA",
     "COCA-COLA İÇECEK A.Ş.":"CCOLA","DATAGATE BİLGİSAYAR MALZEMELERİ TİCARET A.Ş.":"DGATE",
     "DEMİSAŞ DÖKÜM EMAYE MAMÜLLERİ SANAYİ A.Ş.":"DMSAS","DESA DERİ SANAYİ VE TİCARET A.Ş.":"DESA",
     "DOĞUŞ OTOMOTİV SERVİS VE TİCARET A.Ş.":"DOAS","DURAN DOĞAN BASIM VE AMBALAJ SANAYİ A.Ş.":"DURDO",
@@ -85,37 +85,42 @@ TICKER_MAP = {
     "BORUSAN BİRLEŞİK BORU FABRİKALARI SANAYİ VE TİCARET A.Ş.":"BORU",
     "BORUSAN YATIRIM VE PAZARLAMA A.Ş.":"BRYAT","BOSCH FREN SİSTEMLERİ SANAYİ VE TİCARET A.Ş.":"BFREN",
     "BOSSA TİCARET VE SANAYİ İŞLETMELERİ T.A.Ş.":"BOSSA","DESPEC BİLGİSAYAR PAZARLAMA VE TİCARET A.Ş.":"DESPC",
-    "ASELSAN":"ASELS","THYAO":"THYAO","BIMAS":"BIMAS","EREGL":"EREGL",
-    "SASA":"SASA","TUPRS":"TUPRS","KCHOL":"KCHOL","SAHOL":"SAHOL",
-    "GARAN":"GARAN","AKBNK":"AKBNK","YKBNK":"YKBNK","HALKB":"HALKB",
-    "VAKBN":"VAKBN","ISCTR":"ISCTR","TOASO":"TOASO","ARCLK":"ARCLK",
-    "TTKOM":"TTKOM","TAVHL":"TAVHL","PGSUS":"PGSUS","ULKER":"ULKER",
-    "MGROS":"MGROS","SOKM":"SOKM","TKFEN":"TKFEN","ENKAI":"ENKAI",
 }
 
-SKIP_KEYWORDS = ['PORTFÖY','YATIRIM FONU','MENKUL DEĞERLER A.Ş.','VARLIK KİRALAMA','SUKUK']
+DATA_FILE = "financial_data.json"
+SKIP_KW = ['PORTFÖY','YATIRIM FONU','MENKUL DEĞERLER A.Ş.','VARLIK KİRALAMA','SUKUK']
 
 for k,v in [("financial_data",{}),("selected_stock",None),("live_data",{})]:
     if k not in st.session_state: st.session_state[k]=v
 
-def get_ticker(company_name):
-    name=company_name.strip()
-    if name in TICKER_MAP: return TICKER_MAP[name]
-    words=name.replace("A.Ş.","").replace("T.A.Ş.","").replace("VE TİCARET","").strip().split()
+def save_data(data):
+    try:
+        serializable={k:df.to_dict() for k,df in data.items()}
+        with open(DATA_FILE,"w",encoding="utf-8") as f:
+            json.dump(serializable,f,ensure_ascii=False)
+    except: pass
+
+def load_saved_data():
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE,"r",encoding="utf-8") as f:
+                raw=json.load(f)
+            return {k:pd.DataFrame(v) for k,v in raw.items()}
+    except: pass
+    return {}
+
+def get_ticker(name):
+    n=name.strip()
+    if n in TICKER_MAP: return TICKER_MAP[n]
+    words=n.replace("A.Ş.","").replace("T.A.Ş.","").replace("VE TİCARET","").strip().split()
     return words[0][:6].upper() if words else None
 
 def parse_number(val):
-    if val is None: return None
-    try:
-        s=str(val).strip().replace(" ","").replace(".","").replace(",",".")
-        return float(s)
+    try: return float(str(val).strip().replace(" ","").replace(".","").replace(",","."))
     except: return None
 
 def load_kap_files(uploaded_files):
-    data={}
-    errors=[]
-    skip_kw=['PORTFÖY','YATIRIM FONU','MENKUL DEĞERLER','VARLIK KİRALAMA','SUKUK','VARLIK KİRALAMA']
-    
+    data={}; errors=[]
     for uf in uploaded_files:
         try:
             df=pd.read_excel(uf,header=5)
@@ -123,35 +128,20 @@ def load_kap_files(uploaded_files):
                        'ToplamKaynaklar','DonenVarliklar','ToplamYukumlulukler','ToplamOzkaynaklar',
                        'ToplamVarliklar','Hasilat','BrutKar','EsasFaaliyetKari','NetDonemKari','DuranVarliklar']
             df=df[df['Periyot']=='4']
-            df=df[~df['Yil'].isna()]
-            df=df[df['Yil']!='Yıl']
-            
+            df=df[~df['Yil'].isna()]; df=df[df['Yil']!='Yıl']
             num_cols=['DonenVarliklar','DuranVarliklar','ToplamVarliklar','ToplamYukumlulukler',
                      'ToplamOzkaynaklar','Hasilat','BrutKar','EsasFaaliyetKari','NetDonemKari']
-            for c in num_cols:
-                df[c]=df[c].apply(parse_number)
-            
+            for c in num_cols: df[c]=df[c].apply(parse_number)
             df.loc[df['ParaBirimi']=='1000TL',num_cols]=df.loc[df['ParaBirimi']=='1000TL',num_cols].multiply(1000)
             df['NitelikOrder']=df['Nitelik'].map({'Konsolide':0,'Konsolide Olmayan':1}).fillna(2)
-            df=df.sort_values(['Sirket','Yil','NitelikOrder'])
-            df=df.drop_duplicates(subset=['Sirket','Yil'],keep='first')
-            
+            df=df.sort_values(['Sirket','Yil','NitelikOrder']).drop_duplicates(subset=['Sirket','Yil'],keep='first')
             for sirket in df['Sirket'].unique():
-                if any(kw in str(sirket).upper() for kw in skip_kw): continue
+                if any(kw in str(sirket).upper() for kw in SKIP_KW): continue
                 ticker=get_ticker(str(sirket))
                 if not ticker: continue
-                
                 comp=df[df['Sirket']==sirket].sort_values('Yil')
-                rows={
-                    "DÖNEN VARLIKLAR":{},
-                    "DURAN VARLIKLAR":{},
-                    "TOPLAM VARLIKLAR":{},
-                    "ÖZKAYNAKLAR":{},
-                    "HASILAT":{},
-                    "BRÜT KAR/ZARAR":{},
-                    "ESAS FAALİYET KARI/ZARARI":{},
-                    "DÖNEM KARI/ZARARI":{},
-                }
+                rows={"DÖNEN VARLIKLAR":{},"DURAN VARLIKLAR":{},"TOPLAM VARLIKLAR":{},"ÖZKAYNAKLAR":{},
+                      "HASILAT":{},"BRÜT KAR/ZARAR":{},"ESAS FAALİYET KARI/ZARARI":{},"DÖNEM KARI/ZARARI":{}}
                 for _,row in comp.iterrows():
                     y=str(row['Yil'])
                     rows["DÖNEN VARLIKLAR"][y]=row['DonenVarliklar']
@@ -162,27 +152,32 @@ def load_kap_files(uploaded_files):
                     rows["BRÜT KAR/ZARAR"][y]=row['BrutKar']
                     rows["ESAS FAALİYET KARI/ZARARI"][y]=row['EsasFaaliyetKari']
                     rows["DÖNEM KARI/ZARARI"][y]=row['NetDonemKari']
-                
                 fin_df=pd.DataFrame(rows).T
                 if ticker in data:
                     for col in fin_df.columns:
-                        if col not in data[ticker].columns:
-                            data[ticker][col]=fin_df[col]
-                else:
-                    data[ticker]=fin_df
-                    
-        except Exception as e:
-            errors.append(f"{uf.name}: {e}")
-    
+                        if col not in data[ticker].columns: data[ticker][col]=fin_df[col]
+                else: data[ticker]=fin_df
+        except Exception as e: errors.append(f"{uf.name}: {e}")
     return data,errors
 
 @st.cache_data(ttl=300,show_spinner=False)
 def fetch_stock(ticker):
     try:
         s=yf.Ticker(f"{ticker}.IS"); i=s.info
-        return {"price":i.get("currentPrice") or i.get("regularMarketPrice") or 0,"fk":i.get("trailingPE"),"pddd":i.get("priceToBook"),"fd_favok":i.get("enterpriseToEbitda"),"market_cap":i.get("marketCap"),"shares":i.get("sharesOutstanding"),"sector":i.get("sector","—"),"name":i.get("longName",ticker),"52w_high":i.get("fiftyTwoWeekHigh"),"52w_low":i.get("fiftyTwoWeekLow")}
+        hist=s.history(period="1y")
+        prices={}
+        if not hist.empty:
+            hist.index=pd.to_datetime(hist.index)
+            monthly=hist['Close'].resample('ME').last()
+            prices={str(d.date()):float(v) for d,v in monthly.items()}
+        return {"price":i.get("currentPrice") or i.get("regularMarketPrice") or 0,
+                "fk":i.get("trailingPE"),"pddd":i.get("priceToBook"),
+                "fd_favok":i.get("enterpriseToEbitda"),"market_cap":i.get("marketCap"),
+                "shares":i.get("sharesOutstanding"),"sector":i.get("sector","—"),
+                "name":i.get("longName",ticker),"52w_high":i.get("fiftyTwoWeekHigh"),
+                "52w_low":i.get("fiftyTwoWeekLow"),"price_history":prices}
     except:
-        return {k:None for k in ["price","fk","pddd","fd_favok","market_cap","shares","sector","name","52w_high","52w_low"]}
+        return {k:None for k in ["price","fk","pddd","fd_favok","market_cap","shares","sector","name","52w_high","52w_low","price_history"]}
 
 def calc_dcf(fin,shares,disc=0.25,tg=0.08,yrs=5):
     try:
@@ -308,6 +303,8 @@ def show_detail(ticker):
             def gs(k):
                 if k not in fin.index: return []
                 return [float(v) if v is not None and not(isinstance(v,float) and np.isnan(v)) else None for v in fin.loc[k].reindex(years)]
+
+            # Bar charts
             fig1=make_subplots(rows=1,cols=3,subplot_titles=("Varlık Artışı","Hasılat","Net Kâr"),horizontal_spacing=.06)
             for key,ci,color in [("TOPLAM VARLIKLAR",1,"#3b82f6"),("HASILAT",2,"#22c55e"),("DÖNEM KARI/ZARARI",3,"#eab308")]:
                 vals=gs(key)
@@ -315,13 +312,39 @@ def show_detail(ticker):
                     fig1.add_trace(go.Bar(x=years,y=vals,marker_color=[color if v and v>0 else "#ef4444" for v in vals],text=[fmt(v,"") for v in vals],textposition="outside",textfont=dict(size=9),showlegend=False),row=1,col=ci)
             fig1.update_layout(**LY,height=350); fig1.update_xaxes(**AX); fig1.update_yaxes(**AX,showticklabels=False)
             st.plotly_chart(fig1,use_container_width=True)
+
+            # Gelir trendi + Fiyat + Piyasa Değeri
             rev,ni=gs("HASILAT"),gs("DÖNEM KARI/ZARARI")
+            price_hist=info.get("price_history") or {}
+            
+            fig2=go.Figure()
             if any(v is not None for v in rev):
-                fig2=go.Figure()
-                fig2.add_trace(go.Scatter(x=years,y=rev,name="Hasılat",line=dict(color="#3b82f6",width=2.5),mode="lines+markers"))
-                if any(v is not None for v in ni): fig2.add_trace(go.Scatter(x=years,y=ni,name="Net Kâr",line=dict(color="#22c55e",width=2.5),mode="lines+markers"))
-                fig2.update_layout(**LY,height=300,title_text="Gelir Trendi",legend=dict(bgcolor="#131d30",bordercolor="#1e2d42")); fig2.update_xaxes(**AX); fig2.update_yaxes(**AX)
-                st.plotly_chart(fig2,use_container_width=True)
+                fig2.add_trace(go.Scatter(x=years,y=rev,name="Hasılat",line=dict(color="#3b82f6",width=2.5),mode="lines+markers",yaxis="y1"))
+            if any(v is not None for v in ni):
+                fig2.add_trace(go.Scatter(x=years,y=ni,name="Net Kâr",line=dict(color="#22c55e",width=2.5),mode="lines+markers",yaxis="y1"))
+            if price_hist:
+                dates=sorted(price_hist.keys())
+                prices=[price_hist[d] for d in dates]
+                fig2.add_trace(go.Scatter(x=dates,y=prices,name="Hisse Fiyatı (₺)",line=dict(color="#eab308",width=1.5,dash="dot"),mode="lines",yaxis="y2"))
+            
+            fig2.update_layout(
+                **LY,height=380,title_text="Gelir Trendi & Fiyat",
+                legend=dict(bgcolor="#131d30",bordercolor="#1e2d42"),
+                yaxis=dict(title="Finansal (₺)",gridcolor="#1e2d42",tickfont=dict(size=9,color="#475569")),
+                yaxis2=dict(title="Fiyat (₺)",overlaying="y",side="right",gridcolor="#1e2d42",tickfont=dict(size=9,color="#eab308"))
+            )
+            fig2.update_xaxes(**AX)
+            st.plotly_chart(fig2,use_container_width=True)
+
+            # Piyasa Değeri trendi (hesaplanan)
+            if price_hist and shares:
+                dates=sorted(price_hist.keys())
+                mcap_vals=[price_hist[d]*shares/1e9 for d in dates]
+                fig3=go.Figure()
+                fig3.add_trace(go.Scatter(x=dates,y=mcap_vals,name="Piyasa Değeri (B₺)",line=dict(color="#a855f7",width=2),fill="tozeroy",fillcolor="rgba(168,85,247,0.08)",mode="lines"))
+                fig3.update_layout(**LY,height=280,title_text="Piyasa Değeri Trendi",legend=dict(bgcolor="#131d30",bordercolor="#1e2d42"))
+                fig3.update_xaxes(**AX); fig3.update_yaxes(**AX)
+                st.plotly_chart(fig3,use_container_width=True)
 
 def show_table():
     tickers=list(st.session_state.financial_data.keys())
@@ -348,34 +371,42 @@ def show_table():
     if max_pd>0: filtered=[r for r in filtered if r["pddd"] and r["pddd"]<=max_pd]
     sk={"DCF Potansiyel ↓":(lambda x:x["pot"] or -999,True),"F/K ↑":(lambda x:x["fk"] or 9999,False),"PD/DD ↑":(lambda x:x["pddd"] or 9999,False),"Ticker A-Z":(lambda x:x["ticker"],False)}[sort_opt]
     filtered.sort(key=sk[0],reverse=sk[1])
-    st.markdown('<div class="tbl-header"><span>#</span><span>HİSSE</span><span>SEKTÖR</span><span>FİYAT</span><span>F/K</span><span>PD/DD</span><span>DCF HEDEF</span><span>DCF POT%</span><span>DETAY</span></div>',unsafe_allow_html=True)
+    st.markdown('<div class="tbl-header"><span>#</span><span>HİSSE & DETAY</span><span>FİYAT</span><span>F/K</span><span>PD/DD</span><span>DCF HEDEF</span><span>DCF POT%</span></div>',unsafe_allow_html=True)
     for i,r in enumerate(filtered):
         pot_badge=""
         if r["pot"] is not None:
             cls="badge-green" if r["pot"]>20 else("badge-yellow" if r["pot"]>0 else "badge-red")
             pot_badge=f'<span class="badge {cls}">%{r["pot"]:.0f}</span>'
-        cr,cb=st.columns([10,1])
-        cr.markdown(f'<div class="tbl-row"><span class="tbl-num">{i+1}</span><span class="tbl-ticker">{r["ticker"]}</span><span class="tbl-sector">{r["sector"]}</span><span class="tbl-price">{r["price"]:.2f} ₺</span><span class="tbl-val">{fmt2(r["fk"])}</span><span class="tbl-val">{fmt2(r["pddd"])}</span><span class="tbl-dcf">{f"{r[chr(100)+chr(99)+chr(102)]:.2f} ₺" if r["dcf"] else "—"}</span><span>{pot_badge}</span><span></span></div>',unsafe_allow_html=True)
-        if cb.button("📊",key=f"b_{r['ticker']}_{i}"): st.session_state.selected_stock=r["ticker"]; st.rerun()
+        col_row,col_btn=st.columns([10,1])
+        col_row.markdown(f'<div class="tbl-row"><span class="tbl-num">{i+1}</span><span class="tbl-ticker">{r["ticker"]}</span><span class="tbl-price">{r["price"]:.2f} ₺</span><span class="tbl-val">{fmt2(r["fk"])}</span><span class="tbl-val">{fmt2(r["pddd"])}</span><span class="tbl-dcf">{f"{r[chr(100)+chr(99)+chr(102)]:.2f} ₺" if r["dcf"] else "—"}</span><span>{pot_badge}</span></div>',unsafe_allow_html=True)
+        if col_btn.button("📊",key=f"b_{r['ticker']}_{i}",help=r['ticker']): st.session_state.selected_stock=r["ticker"]; st.rerun()
 
 def main():
     st.markdown('<h1 class="app-title">📊 BIST FİNANSAL ANALİZ</h1><p class="app-sub">Dip Tarama · DCF Hesaplama · Finansal Tablolar · Canlı Veriler</p>',unsafe_allow_html=True)
+    
+    # Load saved data on startup
+    if not st.session_state.financial_data:
+        saved=load_saved_data()
+        if saved: st.session_state.financial_data=saved
+
     with st.sidebar:
         st.markdown("## 📁 KAP Dosyaları Yükle")
-        st.markdown('<div class="sidebar-section"><b>KAP Formatı:</b><br><br>• Tüm dosyaları aynı anda seç<br>• Her dosyada birden fazla hisse olabilir<br>• Yıllık (Periyot=4) veriler otomatik okunur<br>• Şirket adından ticker otomatik bulunur</div>',unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-section"><b>KAP Formatı:</b><br><br>• Tüm dosyaları aynı anda seç<br>• Her dosyada birden fazla hisse olabilir<br>• Veriler otomatik kaydedilir</div>',unsafe_allow_html=True)
         uploaded=st.file_uploader("KAP Excel Dosyaları",type=["xlsx","xls"],accept_multiple_files=True)
         if uploaded:
             with st.spinner(f"{len(uploaded)} dosya işleniyor..."):
                 data,errors=load_kap_files(uploaded)
                 st.session_state.financial_data=data
                 st.session_state.live_data={}
-            if data: st.success(f"✅ {len(data)} hisse yüklendi")
+                save_data(data)
+            if data: st.success(f"✅ {len(data)} hisse yüklendi ve kaydedildi")
             if errors:
                 with st.expander(f"⚠️ {len(errors)} hata"):
                     [st.caption(e) for e in errors]
         if st.session_state.financial_data:
+            st.markdown(f"<small style='color:#475569;'>{len(st.session_state.financial_data)} hisse yüklü</small>",unsafe_allow_html=True)
             st.markdown("---")
-            if st.button("🔄 Verileri Güncelle",use_container_width=True): st.session_state.live_data={}; st.cache_data.clear(); st.rerun()
+            if st.button("🔄 Canlı Verileri Güncelle",use_container_width=True): st.session_state.live_data={}; st.cache_data.clear(); st.rerun()
     if not st.session_state.financial_data:
         st.markdown('<div style="text-align:center;padding:3rem 2rem;background:#0f1626;border:1px dashed #1e2d42;border-radius:14px;"><div style="font-size:3rem;">📁</div><h2 style="color:#f1f5f9;">KAP dosyalarını yükleyin</h2><p style="color:#475569;">Tüm dosyaları aynı anda seçebilirsiniz</p></div>',unsafe_allow_html=True)
         return
