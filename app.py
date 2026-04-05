@@ -68,24 +68,35 @@ html,body,.stApp{background-color:#0a0f1a!important;color:#e2e8f0;font-family:'I
 </style>
 """, unsafe_allow_html=True)
 
-BILANCO = ["DÖNEN VARLIKLAR","DURAN VARLIKLAR","TOPLAM VARLIKLAR","KISA VADELİ YÜKÜMLÜLÜKLER","UZUN VADELİ YÜKÜMLÜLÜKLER","ÖZKAYNAKLAR"]
-GELIR = ["HASILAT","BRÜT KAR/ZARAR","ESAS FAALİYET KARI/ZARARI","FİNANSMAN GİDERİ ÖNCESİ FAALİYET KARI/ZARARI","SÜRDÜRÜLEN FAALİYETLER VERGİ ÖNCESİ KARI/ZARARI","DÖNEM KARI/ZARARI"]
-LABELS = {"DÖNEN VARLIKLAR":"Dönen Varlıklar","DURAN VARLIKLAR":"Duran Varlıklar","TOPLAM VARLIKLAR":"Toplam Varlıklar","KISA VADELİ YÜKÜMLÜLÜKLER":"Kısa Vadeli Yükümlülükler","UZUN VADELİ YÜKÜMLÜLÜKLER":"Uzun Vadeli Yükümlülükler","ÖZKAYNAKLAR":"Özkaynaklar","HASILAT":"Hasılat","BRÜT KAR/ZARAR":"Brüt Kâr/Zarar","ESAS FAALİYET KARI/ZARARI":"Esas Faaliyet Kârı/Zararı","FİNANSMAN GİDERİ ÖNCESİ FAALİYET KARI/ZARARI":"Fin. Gideri Öncesi Faaliyet K/Z","SÜRDÜRÜLEN FAALİYETLER VERGİ ÖNCESİ KARI/ZARARI":"Vergi Öncesi Kâr/Zarar","DÖNEM KARI/ZARARI":"Dönem Kârı/Zararı"}
+BILANCO = ["DÖNEN VARLIKLAR","DURAN VARLIKLAR","TOPLAM VARLIKLAR","ÖZKAYNAKLAR"]
+GELIR = ["HASILAT","BRÜT KAR/ZARAR","ESAS FAALİYET KARI/ZARARI","DÖNEM KARI/ZARARI"]
+LABELS = {"DÖNEN VARLIKLAR":"Dönen Varlıklar","DURAN VARLIKLAR":"Duran Varlıklar","TOPLAM VARLIKLAR":"Toplam Varlıklar","ÖZKAYNAKLAR":"Özkaynaklar","HASILAT":"Hasılat","BRÜT KAR/ZARAR":"Brüt Kâr/Zarar","ESAS FAALİYET KARI/ZARARI":"Esas Faaliyet Kârı/Zararı","DÖNEM KARI/ZARARI":"Dönem Kârı/Zararı"}
 
 for k,v in [("financial_data",{}),("selected_stock",None),("live_data",{})]:
     if k not in st.session_state: st.session_state[k]=v
 
-def load_excel(f):
-    xl=pd.ExcelFile(f); data={}; errors=[]
-    for s in xl.sheet_names:
+def load_files(uploaded_files):
+    data={}; errors=[]
+    for uploaded in uploaded_files:
         try:
-            df=xl.parse(s,index_col=0)
-            df.columns=[str(c).strip() for c in df.columns]
-            df.index=[str(i).strip().upper() for i in df.index]
-            for c in df.columns:
-                df[c]=pd.to_numeric(df[c].astype(str).str.replace(",",".").str.replace(" ",""),errors="coerce")
-            data[s.strip().upper()]=df
-        except Exception as e: errors.append(f"{s}: {e}")
+            xl=pd.ExcelFile(uploaded)
+            for s in xl.sheet_names:
+                try:
+                    df=xl.parse(s,index_col=0)
+                    df.columns=[str(c).strip() for c in df.columns]
+                    df.index=[str(i).strip().upper() for i in df.index]
+                    for c in df.columns:
+                        df[c]=pd.to_numeric(df[c].astype(str).str.replace(",",".").str.replace(" ",""),errors="coerce")
+                    ticker=s.strip().upper()
+                    if ticker in data:
+                        existing=data[ticker]
+                        new_cols=[c for c in df.columns if c not in existing.columns]
+                        if new_cols:
+                            data[ticker]=pd.concat([existing,df[new_cols]],axis=1)
+                    else:
+                        data[ticker]=df
+                except Exception as e: errors.append(f"{uploaded.name}/{s}: {e}")
+        except Exception as e: errors.append(f"{uploaded.name}: {e}")
     return data,errors
 
 @st.cache_data(ttl=300,show_spinner=False)
@@ -208,7 +219,12 @@ def show_detail(ticker):
                 h=f'<tr class="section-header"><td colspan="{len(years)+1}">{section}</td></tr>'
                 for m in metrics:
                     if m not in fin.index: continue
-                    cells="".join(f'<td class="{"positive" if (v:=fin.loc[m,y] if y in fin.columns else None) and not(isinstance(v,float) and np.isnan(v)) and v>0 else "negative" if v and not(isinstance(v,float) and np.isnan(v)) and v<0 else ""}">{fmt(v,"") if v is not None and not(isinstance(v,float) and np.isnan(v)) else "—"}</td>' for y in years)
+                    cells=""
+                    for y in years:
+                        v=fin.loc[m,y] if y in fin.columns else None
+                        ok=v is not None and not(isinstance(v,float) and np.isnan(v))
+                        cls="positive" if ok and v>0 else("negative" if ok and v<0 else "")
+                        cells+=f'<td class="{cls}">{fmt(v,"") if ok else "—"}</td>'
                     h+=f"<tr><td>{LABELS.get(m,m)}</td>{cells}</tr>"
                 return h
             yh="".join(f"<th>{y}</th>" for y in years)
@@ -238,7 +254,7 @@ def show_table():
     tickers=list(st.session_state.financial_data.keys())
     missing=[t for t in tickers if t not in st.session_state.live_data]
     if missing:
-        prog=st.progress(0,text=f"Canlı veriler çekiliyor...")
+        prog=st.progress(0,text="Canlı veriler çekiliyor...")
         for i,t in enumerate(missing):
             st.session_state.live_data[t]=fetch_stock(t); prog.progress((i+1)/len(missing),text=f"Çekiliyor: {t}")
         prog.empty()
@@ -266,18 +282,20 @@ def show_table():
             cls="badge-green" if r["pot"]>20 else("badge-yellow" if r["pot"]>0 else "badge-red")
             pot_badge=f'<span class="badge {cls}">%{r["pot"]:.0f}</span>'
         cr,cb=st.columns([10,1])
-        cr.markdown(f'<div class="tbl-row"><span class="tbl-num">{i+1}</span><span class="tbl-ticker">{r["ticker"]}</span><span class="tbl-sector">{r["sector"]}</span><span class="tbl-price">{r["price"]:.2f} ₺</span><span class="tbl-val">{fmt2(r["fk"])}</span><span class="tbl-val">{fmt2(r["pddd"])}</span><span class="tbl-dcf">{f"{r["dcf"]:.2f} ₺" if r["dcf"] else "—"}</span><span>{pot_badge}</span><span></span></div>',unsafe_allow_html=True)
+        cr.markdown(f'<div class="tbl-row"><span class="tbl-num">{i+1}</span><span class="tbl-ticker">{r["ticker"]}</span><span class="tbl-sector">{r["sector"]}</span><span class="tbl-price">{r["price"]:.2f} ₺</span><span class="tbl-val">{fmt2(r["fk"])}</span><span class="tbl-val">{fmt2(r["pddd"])}</span><span class="tbl-dcf">{f"{r[chr(100)+chr(99)+chr(102)]:.2f} ₺" if r["dcf"] else "—"}</span><span>{pot_badge}</span><span></span></div>',unsafe_allow_html=True)
         if cb.button("📊",key=f"b_{r['ticker']}_{i}"): st.session_state.selected_stock=r["ticker"]; st.rerun()
 
 def main():
     st.markdown('<h1 class="app-title">📊 BIST FİNANSAL ANALİZ</h1><p class="app-sub">Dip Tarama · DCF Hesaplama · Finansal Tablolar · Canlı Veriler</p>',unsafe_allow_html=True)
     with st.sidebar:
         st.markdown("## 📁 Veri Yükle")
-        st.markdown('<div class="sidebar-section"><b>Excel Formatı:</b><br><br>• Her <b>sayfa (tab)</b> = 1 hisse kodu<br>• <b>İlk sütun</b> = metrik isimleri<br>• <b>Diğer sütunlar</b> = yıllar<br><br>Fiyat, F/K, PD/DD otomatik çekilir.</div>',unsafe_allow_html=True)
-        uploaded=st.file_uploader("Excel Dosyası Yükle",type=["xlsx","xls"])
+        st.markdown('<div class="sidebar-section"><b>Çoklu Dosya:</b><br><br>• 96 dosyanı aynı anda seç<br>• Her sayfa = 1 hisse kodu<br>• Tüm dosyalar birleştirilir<br>• Canlı veri otomatik çekilir</div>',unsafe_allow_html=True)
+        uploaded=st.file_uploader("Excel Dosyaları Yükle",type=["xlsx","xls"],accept_multiple_files=True)
         if uploaded:
-            with st.spinner("Yükleniyor..."):
-                data,errors=load_excel(uploaded); st.session_state.financial_data=data; st.session_state.live_data={}
+            with st.spinner(f"{len(uploaded)} dosya işleniyor..."):
+                data,errors=load_files(uploaded)
+                st.session_state.financial_data=data
+                st.session_state.live_data={}
             if data: st.success(f"✅ {len(data)} hisse yüklendi")
             if errors:
                 with st.expander(f"⚠️ {len(errors)} hata"):
@@ -286,7 +304,7 @@ def main():
             st.markdown("---")
             if st.button("🔄 Canlı Verileri Güncelle",use_container_width=True): st.session_state.live_data={}; st.cache_data.clear(); st.rerun()
     if not st.session_state.financial_data:
-        st.markdown('<div style="text-align:center;padding:3rem 2rem;background:#0f1626;border:1px dashed #1e2d42;border-radius:14px;"><div style="font-size:3rem;">📁</div><h2 style="color:#f1f5f9;">Sol menüden Excel dosyanızı yükleyin</h2><p style="color:#475569;">Her sayfa = 1 hisse kodu</p></div>',unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;padding:3rem 2rem;background:#0f1626;border:1px dashed #1e2d42;border-radius:14px;"><div style="font-size:3rem;">📁</div><h2 style="color:#f1f5f9;">Sol menüden Excel dosyalarını yükleyin</h2><p style="color:#475569;">96 dosyayı aynı anda seçebilirsiniz</p></div>',unsafe_allow_html=True)
         return
     if st.session_state.selected_stock: show_detail(st.session_state.selected_stock)
     else: show_table()
