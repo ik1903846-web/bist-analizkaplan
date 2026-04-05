@@ -68,35 +68,112 @@ html,body,.stApp{background-color:#0a0f1a!important;color:#e2e8f0;font-family:'I
 </style>
 """, unsafe_allow_html=True)
 
-BILANCO = ["DÖNEN VARLIKLAR","DURAN VARLIKLAR","TOPLAM VARLIKLAR","ÖZKAYNAKLAR"]
-GELIR = ["HASILAT","BRÜT KAR/ZARAR","ESAS FAALİYET KARI/ZARARI","DÖNEM KARI/ZARARI"]
-LABELS = {"DÖNEN VARLIKLAR":"Dönen Varlıklar","DURAN VARLIKLAR":"Duran Varlıklar","TOPLAM VARLIKLAR":"Toplam Varlıklar","ÖZKAYNAKLAR":"Özkaynaklar","HASILAT":"Hasılat","BRÜT KAR/ZARAR":"Brüt Kâr/Zarar","ESAS FAALİYET KARI/ZARARI":"Esas Faaliyet Kârı/Zararı","DÖNEM KARI/ZARARI":"Dönem Kârı/Zararı"}
+TICKER_MAP = {
+    "AYGAZ A.Ş.":"AYGAZ","ASELSAN ELEKTRONİK SANAYİ VE TİCARET A.Ş.":"ASELS",
+    "AKSA AKRİLİK KİMYA SANAYİİ A.Ş.":"AKSA","AKSA ENERJİ ÜRETİM A.Ş.":"AKSEN",
+    "AKENERJİ ELEKTRİK ÜRETİM A.Ş.":"AKENR","AKFEN HOLDİNG A.Ş.":"AKFEN",
+    "ALARKO CARRIER SANAYİ VE TİCARET A.Ş.":"ALCAR","BAGFAŞ BANDIRMA GÜBRE FABRİKALARI A.Ş.":"BAGFS",
+    "BEŞİKTAŞ FUTBOL YATIRIMLARI SANAYİ VE TİCARET A.Ş.":"BJKAS","BRİSA BRİDGESTONE SABANCI LASTİK SANAYİ VE TİCARET A.Ş.":"BRISA",
+    "COCA-COLA İÇECEK A.Ş.":"CCOLA","DATAGATE BİLGİSAYAR MALZEMELERİ TİCARET A.Ş.":"DGATE",
+    "DEMİSAŞ DÖKÜM EMAYE MAMÜLLERİ SANAYİ A.Ş.":"DMSAS","DESA DERİ SANAYİ VE TİCARET A.Ş.":"DESA",
+    "DOĞUŞ OTOMOTİV SERVİS VE TİCARET A.Ş.":"DOAS","DURAN DOĞAN BASIM VE AMBALAJ SANAYİ A.Ş.":"DURDO",
+    "FORD OTOMOTİV SANAYİ A.Ş.":"FROTO","FONET BİLGİ TEKNOLOJİLERİ A.Ş.":"FONET",
+    "GLOBAL YATIRIM HOLDİNG A.Ş.":"GLYHO","GOODYEAR LASTİKLERİ T.A.Ş.":"GOODY",
+    "GÖLTAŞ GÖLLER BÖLGESİ ÇİMENTO SANAYİ VE TİCARET A.Ş.":"GOLTS","HEKTAŞ TİCARET T.A.Ş.":"HEKTS",
+    "ÇELEBİ HAVA SERVİSİ A.Ş.":"CLEBI","ÇELİK HALAT VE TEL SANAYİİ A.Ş.":"CELHA",
+    "İŞ GİRİŞİM SERMAYESİ YATIRIM ORTAKLIĞI A.Ş.":"ISGSY","İZMİR DEMİR ÇELİK SANAYİ A.Ş.":"IZMDC",
+    "BORUSAN BİRLEŞİK BORU FABRİKALARI SANAYİ VE TİCARET A.Ş.":"BORU",
+    "BORUSAN YATIRIM VE PAZARLAMA A.Ş.":"BRYAT","BOSCH FREN SİSTEMLERİ SANAYİ VE TİCARET A.Ş.":"BFREN",
+    "BOSSA TİCARET VE SANAYİ İŞLETMELERİ T.A.Ş.":"BOSSA","DESPEC BİLGİSAYAR PAZARLAMA VE TİCARET A.Ş.":"DESPC",
+    "ASELSAN":"ASELS","THYAO":"THYAO","BIMAS":"BIMAS","EREGL":"EREGL",
+    "SASA":"SASA","TUPRS":"TUPRS","KCHOL":"KCHOL","SAHOL":"SAHOL",
+    "GARAN":"GARAN","AKBNK":"AKBNK","YKBNK":"YKBNK","HALKB":"HALKB",
+    "VAKBN":"VAKBN","ISCTR":"ISCTR","TOASO":"TOASO","ARCLK":"ARCLK",
+    "TTKOM":"TTKOM","TAVHL":"TAVHL","PGSUS":"PGSUS","ULKER":"ULKER",
+    "MGROS":"MGROS","SOKM":"SOKM","TKFEN":"TKFEN","ENKAI":"ENKAI",
+}
+
+SKIP_KEYWORDS = ['PORTFÖY','YATIRIM FONU','MENKUL DEĞERLER A.Ş.','VARLIK KİRALAMA','SUKUK']
 
 for k,v in [("financial_data",{}),("selected_stock",None),("live_data",{})]:
     if k not in st.session_state: st.session_state[k]=v
 
-def load_files(uploaded_files):
-    data={}; errors=[]
-    for uploaded in uploaded_files:
+def get_ticker(company_name):
+    name=company_name.strip()
+    if name in TICKER_MAP: return TICKER_MAP[name]
+    words=name.replace("A.Ş.","").replace("T.A.Ş.","").replace("VE TİCARET","").strip().split()
+    return words[0][:6].upper() if words else None
+
+def parse_number(val):
+    if val is None: return None
+    try:
+        s=str(val).strip().replace(" ","").replace(".","").replace(",",".")
+        return float(s)
+    except: return None
+
+def load_kap_files(uploaded_files):
+    data={}
+    errors=[]
+    skip_kw=['PORTFÖY','YATIRIM FONU','MENKUL DEĞERLER','VARLIK KİRALAMA','SUKUK','VARLIK KİRALAMA']
+    
+    for uf in uploaded_files:
         try:
-            xl=pd.ExcelFile(uploaded)
-            for s in xl.sheet_names:
-                try:
-                    df=xl.parse(s,index_col=0)
-                    df.columns=[str(c).strip() for c in df.columns]
-                    df.index=[str(i).strip().upper() for i in df.index]
-                    for c in df.columns:
-                        df[c]=pd.to_numeric(df[c].astype(str).str.replace(",",".").str.replace(" ",""),errors="coerce")
-                    ticker=s.strip().upper()
-                    if ticker in data:
-                        existing=data[ticker]
-                        new_cols=[c for c in df.columns if c not in existing.columns]
-                        if new_cols:
-                            data[ticker]=pd.concat([existing,df[new_cols]],axis=1)
-                    else:
-                        data[ticker]=df
-                except Exception as e: errors.append(f"{uploaded.name}/{s}: {e}")
-        except Exception as e: errors.append(f"{uploaded.name}: {e}")
+            df=pd.read_excel(uf,header=5)
+            df.columns=['Sirket','BildirimID','Tarih','Yil','Periyot','Nitelik','ParaBirimi','SektorTur',
+                       'ToplamKaynaklar','DonenVarliklar','ToplamYukumlulukler','ToplamOzkaynaklar',
+                       'ToplamVarliklar','Hasilat','BrutKar','EsasFaaliyetKari','NetDonemKari','DuranVarliklar']
+            df=df[df['Periyot']=='4']
+            df=df[~df['Yil'].isna()]
+            df=df[df['Yil']!='Yıl']
+            
+            num_cols=['DonenVarliklar','DuranVarliklar','ToplamVarliklar','ToplamYukumlulukler',
+                     'ToplamOzkaynaklar','Hasilat','BrutKar','EsasFaaliyetKari','NetDonemKari']
+            for c in num_cols:
+                df[c]=df[c].apply(parse_number)
+            
+            df.loc[df['ParaBirimi']=='1000TL',num_cols]=df.loc[df['ParaBirimi']=='1000TL',num_cols].multiply(1000)
+            df['NitelikOrder']=df['Nitelik'].map({'Konsolide':0,'Konsolide Olmayan':1}).fillna(2)
+            df=df.sort_values(['Sirket','Yil','NitelikOrder'])
+            df=df.drop_duplicates(subset=['Sirket','Yil'],keep='first')
+            
+            for sirket in df['Sirket'].unique():
+                if any(kw in str(sirket).upper() for kw in skip_kw): continue
+                ticker=get_ticker(str(sirket))
+                if not ticker: continue
+                
+                comp=df[df['Sirket']==sirket].sort_values('Yil')
+                rows={
+                    "DÖNEN VARLIKLAR":{},
+                    "DURAN VARLIKLAR":{},
+                    "TOPLAM VARLIKLAR":{},
+                    "ÖZKAYNAKLAR":{},
+                    "HASILAT":{},
+                    "BRÜT KAR/ZARAR":{},
+                    "ESAS FAALİYET KARI/ZARARI":{},
+                    "DÖNEM KARI/ZARARI":{},
+                }
+                for _,row in comp.iterrows():
+                    y=str(row['Yil'])
+                    rows["DÖNEN VARLIKLAR"][y]=row['DonenVarliklar']
+                    rows["DURAN VARLIKLAR"][y]=row['DuranVarliklar']
+                    rows["TOPLAM VARLIKLAR"][y]=row['ToplamVarliklar']
+                    rows["ÖZKAYNAKLAR"][y]=row['ToplamOzkaynaklar']
+                    rows["HASILAT"][y]=row['Hasilat']
+                    rows["BRÜT KAR/ZARAR"][y]=row['BrutKar']
+                    rows["ESAS FAALİYET KARI/ZARARI"][y]=row['EsasFaaliyetKari']
+                    rows["DÖNEM KARI/ZARARI"][y]=row['NetDonemKari']
+                
+                fin_df=pd.DataFrame(rows).T
+                if ticker in data:
+                    for col in fin_df.columns:
+                        if col not in data[ticker].columns:
+                            data[ticker][col]=fin_df[col]
+                else:
+                    data[ticker]=fin_df
+                    
+        except Exception as e:
+            errors.append(f"{uf.name}: {e}")
+    
     return data,errors
 
 @st.cache_data(ttl=300,show_spinner=False)
@@ -125,7 +202,7 @@ def calc_dcf(fin,shares,disc=0.25,tg=0.08,yrs=5):
 def gm(fin):
     m={}
     try:
-        def s(k): return fin.loc[k].dropna() if k in fin.index else pd.Series(dtype=float)
+        def s(k): return fin.loc[k].dropna().apply(pd.to_numeric,errors='coerce') if k in fin.index else pd.Series(dtype=float)
         rev,ni,gross,eq,ta=s("HASILAT"),s("DÖNEM KARI/ZARARI"),s("BRÜT KAR/ZARAR"),s("ÖZKAYNAKLAR"),s("TOPLAM VARLIKLAR")
         if len(rev)>=2 and rev.iloc[-2]!=0: m["rev_yoy"]=(rev.iloc[-1]/rev.iloc[-2]-1)*100
         if len(ni)>=2 and ni.iloc[-2]>0: m["ni_yoy"]=(ni.iloc[-1]/ni.iloc[-2]-1)*100
@@ -160,7 +237,7 @@ def pbar(label,value,color="#22c55e",mx=100):
     pct=min(abs(value)/mx*100,100); vc="#22c55e" if value>=0 else "#ef4444"
     return f'<div class="pb-wrap"><div class="pb-header"><span class="pb-label">{label}</span><span class="pb-val" style="color:{vc};">%{value:.1f}</span></div><div class="pb-track"><div class="pb-fill" style="width:{pct}%;background:{color};"></div></div></div>'
 
-LY=dict(paper_bgcolor="#0f1626",plot_bgcolor="#0a0f1a",font=dict(color="#94a3b8",family="Inter"),margin=dict(t=40,b=30,l=10,r=10),hoverlabel=dict(bgcolor="#131d30",bordercolor="#1e2d42",font=dict(color="#e2e8f0")))
+LY=dict(paper_bgcolor="#0f1626",plot_bgcolor="#0a0f1a",font=dict(color="#94a3b8",family="Inter"),margin=dict(t=40,b=30,l=10,r=10))
 AX=dict(gridcolor="#1e2d42",zerolinecolor="#1e2d42",tickfont=dict(size=10,color="#475569"))
 
 def show_detail(ticker):
@@ -175,8 +252,8 @@ def show_detail(ticker):
     if st.button("← Taramaya Dön",key="back"): st.session_state.selected_stock=None; st.rerun()
     dt=dcf[0] if dcf else None; pot=((dt/price)-1)*100 if dt and price>0 else None
     pc="#22c55e" if pot and pot>0 else "#ef4444"
-    st.markdown(f'<div class="detail-header"><div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;"><div><p class="detail-name">{info.get("name",ticker)} · {info.get("sector","—")}</p><h1 class="detail-ticker">{ticker}</h1><div style="display:flex;align-items:center;gap:1rem;margin-top:.5rem;"><span class="detail-price">{price:.2f} ₺</span><span style="color:#475569;font-size:.82rem;">Piyasa Değeri: {fmt(mcap)}</span></div></div><div style="text-align:right;"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.3rem;">DCF Hedef Fiyat</div><div style="font-size:1.6rem;font-weight:800;color:{pc};font-family:JetBrains Mono,monospace;">{f"{dt:.2f} ₺" if dt else "—"}</div><div style="color:{pc};font-size:.85rem;font-weight:700;">{f"%{pot:.1f} potansiyel" if pot else ""}</div></div></div></div>',unsafe_allow_html=True)
-    t1,t2,t3=st.tabs(["💰 Özet & Değerleme","📋 Finansal Tablolar","📈 Grafikler"])
+    st.markdown(f'<div class="detail-header"><div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;"><div><p class="detail-name">{info.get("name",ticker)} · {info.get("sector","—")}</p><h1 class="detail-ticker">{ticker}</h1><div style="display:flex;align-items:center;gap:1rem;margin-top:.5rem;"><span class="detail-price">{price:.2f} ₺</span><span style="color:#475569;font-size:.82rem;">Piyasa Değeri: {fmt(mcap)}</span></div></div><div style="text-align:right;"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;margin-bottom:.3rem;">DCF Hedef Fiyat</div><div style="font-size:1.6rem;font-weight:800;color:{pc};">{f"{dt:.2f} ₺" if dt else "—"}</div><div style="color:{pc};font-size:.85rem;font-weight:700;">{f"%{pot:.1f} potansiyel" if pot else ""}</div></div></div></div>',unsafe_allow_html=True)
+    t1,t2,t3=st.tabs(["💰 Özet","📋 Finansal Tablolar","📈 Grafikler"])
     with t1:
         fk=info.get("fk"); pddd=info.get("pddd"); fd=info.get("fd_favok")
         fkc="green" if fk and fk<15 else("yellow" if fk and fk<30 else "red")
@@ -186,35 +263,28 @@ def show_detail(ticker):
         c1,c2,c3,c4=st.columns(4)
         c1.markdown(vbox("F/K",fmt2(fk),fkc,"✓ Ucuz" if fk and fk<15 else ""),unsafe_allow_html=True)
         c2.markdown(vbox("PD/DD",fmt2(pddd),pdc,"✓ Ucuz" if pddd and pddd<3 else ""),unsafe_allow_html=True)
-        c3.markdown(vbox("FD/FAVÖK",fmt2(fd),fdc,"✓ Ucuz" if fd and fd<10 else ""),unsafe_allow_html=True)
+        c3.markdown(vbox("FD/FAVÖK",fmt2(fd),fdc,""),unsafe_allow_html=True)
         c4.markdown(vbox("DCF Potansiyel",f"%{pot:.1f}" if pot else "—",potc,f"{dt:.2f} ₺" if dt else ""),unsafe_allow_html=True)
         w52h=info.get("52w_high"); w52l=info.get("52w_low")
         if w52h and w52l and price:
             p52=min(max((price-w52l)/(w52h-w52l)*100 if w52h!=w52l else 50,0),100)
-            st.markdown(f'<div style="background:#0f1626;border:1px solid #1e2d42;border-radius:10px;padding:1rem 1.25rem;margin:1rem 0;"><div style="display:flex;justify-content:space-between;font-size:.75rem;color:#475569;margin-bottom:.5rem;"><span>52H Min: {w52l:.2f} ₺</span><span style="color:#94a3b8;font-weight:600;">Şu an: {price:.2f} ₺</span><span>52H Max: {w52h:.2f} ₺</span></div><div class="pb-track"><div class="pb-fill" style="width:{p52:.0f}%;background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);"></div></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="background:#0f1626;border:1px solid #1e2d42;border-radius:10px;padding:1rem;margin:1rem 0;"><div style="display:flex;justify-content:space-between;font-size:.75rem;color:#475569;margin-bottom:.5rem;"><span>52H Min: {w52l:.2f} ₺</span><span>Şu an: {price:.2f} ₺</span><span>52H Max: {w52h:.2f} ₺</span></div><div class="pb-track"><div class="pb-fill" style="width:{p52:.0f}%;background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);"></div></div></div>',unsafe_allow_html=True)
         cl,cr=st.columns(2)
         with cl:
             st.markdown("**📈 Büyüme & Performans**")
-            h=pbar("Satış Büyümesi (YoY)",g.get("rev_yoy"),"#3b82f6",200)+pbar("Net Kâr Büyümesi (YoY)",g.get("ni_yoy"),"#22c55e",200)+pbar("Varlık Büyümesi (YoY)",g.get("asset_yoy"),"#eab308",100)
-            st.markdown(h,unsafe_allow_html=True) if h else st.caption("Finansal veri yükleyin")
+            h=pbar("Satış Büyümesi",g.get("rev_yoy"),"#3b82f6",200)+pbar("Net Kâr Büyümesi",g.get("ni_yoy"),"#22c55e",200)+pbar("Varlık Büyümesi",g.get("asset_yoy"),"#eab308",100)
+            st.markdown(h,unsafe_allow_html=True) if h else st.caption("Veri yok")
         with cr:
             st.markdown("**💎 Karlılık**")
-            h=pbar("Brüt Kâr Marjı",g.get("gross_margin"),"#f97316",70)+pbar("Net Kâr Marjı",g.get("net_margin"),"#22c55e",40)+pbar("Özkaynak Karlılığı (ROE)",g.get("roe"),"#ec4899",60)
-            st.markdown(h,unsafe_allow_html=True) if h else st.caption("Finansal veri yükleyin")
-        if not fin.empty:
-            st.markdown("<br>**✖ Büyüme Çarpanları**",unsafe_allow_html=True)
-            mults={LABELS.get(m,m):fin.loc[m].dropna().iloc[-1]/fin.loc[m].dropna().iloc[0] for m in BILANCO+GELIR if m in fin.index and len(fin.loc[m].dropna())>=2 and fin.loc[m].dropna().iloc[0]>0}
-            if mults:
-                keys=list(mults.keys()); rows2=[keys[i:i+3] for i in range(0,len(keys),3)]
-                for rk in rows2:
-                    cols=st.columns(3)
-                    for j,k in enumerate(rk):
-                        v=mults[k]; cls="green" if v>=3 else("yellow" if v>=1.5 else "red")
-                        cols[j].markdown(vbox(k,f"{v:.1f}x",cls),unsafe_allow_html=True)
+            h=pbar("Brüt Kâr Marjı",g.get("gross_margin"),"#f97316",70)+pbar("Net Kâr Marjı",g.get("net_margin"),"#22c55e",40)+pbar("ROE",g.get("roe"),"#ec4899",60)
+            st.markdown(h,unsafe_allow_html=True) if h else st.caption("Veri yok")
     with t2:
-        if fin.empty: st.info("Bu hisse için finansal veri yüklenmedi.")
+        if fin.empty: st.info("Finansal veri yok.")
         else:
-            years=list(fin.columns)
+            years=sorted(fin.columns.tolist())
+            LABELS={"DÖNEN VARLIKLAR":"Dönen Varlıklar","DURAN VARLIKLAR":"Duran Varlıklar","TOPLAM VARLIKLAR":"Toplam Varlıklar","ÖZKAYNAKLAR":"Özkaynaklar","HASILAT":"Hasılat","BRÜT KAR/ZARAR":"Brüt Kâr/Zarar","ESAS FAALİYET KARI/ZARARI":"Esas Faaliyet Kârı","DÖNEM KARI/ZARARI":"Dönem Kârı/Zararı"}
+            BILANCO=["DÖNEN VARLIKLAR","DURAN VARLIKLAR","TOPLAM VARLIKLAR","ÖZKAYNAKLAR"]
+            GELIR=["HASILAT","BRÜT KAR/ZARAR","ESAS FAALİYET KARI/ZARARI","DÖNEM KARI/ZARARI"]
             def mktbl(metrics,section):
                 h=f'<tr class="section-header"><td colspan="{len(years)+1}">{section}</td></tr>'
                 for m in metrics:
@@ -222,7 +292,9 @@ def show_detail(ticker):
                     cells=""
                     for y in years:
                         v=fin.loc[m,y] if y in fin.columns else None
-                        ok=v is not None and not(isinstance(v,float) and np.isnan(v))
+                        try: v=float(v)
+                        except: v=None
+                        ok=v is not None and not np.isnan(v)
                         cls="positive" if ok and v>0 else("negative" if ok and v<0 else "")
                         cells+=f'<td class="{cls}">{fmt(v,"") if ok else "—"}</td>'
                     h+=f"<tr><td>{LABELS.get(m,m)}</td>{cells}</tr>"
@@ -230,24 +302,25 @@ def show_detail(ticker):
             yh="".join(f"<th>{y}</th>" for y in years)
             st.markdown(f'<div style="overflow-x:auto;"><table class="fin-table"><thead><tr><th>Kalem</th>{yh}</tr></thead><tbody>{mktbl(BILANCO,"📊 BİLANÇO")}{mktbl(GELIR,"📋 GELİR TABLOSU")}</tbody></table></div>',unsafe_allow_html=True)
     with t3:
-        if fin.empty: st.info("Grafik için finansal veri yükleyin.")
+        if fin.empty: st.info("Veri yok.")
         else:
-            years=list(fin.columns)
-            def gs(k): return fin.loc[k].reindex(years).tolist() if k in fin.index else []
-            fig1=make_subplots(rows=1,cols=3,subplot_titles=("Varlık Artışı","Ciro (Hasılat)","Net Kâr"),horizontal_spacing=.06)
+            years=sorted(fin.columns.tolist())
+            def gs(k):
+                if k not in fin.index: return []
+                return [float(v) if v is not None and not(isinstance(v,float) and np.isnan(v)) else None for v in fin.loc[k].reindex(years)]
+            fig1=make_subplots(rows=1,cols=3,subplot_titles=("Varlık Artışı","Hasılat","Net Kâr"),horizontal_spacing=.06)
             for key,ci,color in [("TOPLAM VARLIKLAR",1,"#3b82f6"),("HASILAT",2,"#22c55e"),("DÖNEM KARI/ZARARI",3,"#eab308")]:
                 vals=gs(key)
-                if vals:
-                    fig1.add_trace(go.Bar(x=years,y=vals,marker_color=["#ef4444" if(v is None or(isinstance(v,float) and np.isnan(v)) or v<0) else color for v in vals],text=[fmt(v,"") for v in vals],textposition="outside",textfont=dict(size=9,color="#94a3b8"),showlegend=False),row=1,col=ci)
-            fig1.update_layout(**LY,height=380); fig1.update_xaxes(**AX); fig1.update_yaxes(**AX,showticklabels=False)
+                if any(v is not None for v in vals):
+                    fig1.add_trace(go.Bar(x=years,y=vals,marker_color=[color if v and v>0 else "#ef4444" for v in vals],text=[fmt(v,"") for v in vals],textposition="outside",textfont=dict(size=9),showlegend=False),row=1,col=ci)
+            fig1.update_layout(**LY,height=350); fig1.update_xaxes(**AX); fig1.update_yaxes(**AX,showticklabels=False)
             st.plotly_chart(fig1,use_container_width=True)
-            rev,ni,gross=gs("HASILAT"),gs("DÖNEM KARI/ZARARI"),gs("BRÜT KAR/ZARAR")
-            if rev:
+            rev,ni=gs("HASILAT"),gs("DÖNEM KARI/ZARARI")
+            if any(v is not None for v in rev):
                 fig2=go.Figure()
-                fig2.add_trace(go.Scatter(x=years,y=rev,name="Hasılat",line=dict(color="#3b82f6",width=2.5),mode="lines+markers",marker=dict(size=7)))
-                if gross: fig2.add_trace(go.Scatter(x=years,y=gross,name="Brüt Kâr",line=dict(color="#f97316",width=2,dash="dot"),mode="lines+markers",marker=dict(size=7)))
-                if ni: fig2.add_trace(go.Scatter(x=years,y=ni,name="Net Kâr",line=dict(color="#22c55e",width=2.5),mode="lines+markers",marker=dict(size=7)))
-                fig2.update_layout(**LY,height=320,title_text="Gelir Trendi",legend=dict(bgcolor="#131d30",bordercolor="#1e2d42")); fig2.update_xaxes(**AX); fig2.update_yaxes(**AX)
+                fig2.add_trace(go.Scatter(x=years,y=rev,name="Hasılat",line=dict(color="#3b82f6",width=2.5),mode="lines+markers"))
+                if any(v is not None for v in ni): fig2.add_trace(go.Scatter(x=years,y=ni,name="Net Kâr",line=dict(color="#22c55e",width=2.5),mode="lines+markers"))
+                fig2.update_layout(**LY,height=300,title_text="Gelir Trendi",legend=dict(bgcolor="#131d30",bordercolor="#1e2d42")); fig2.update_xaxes(**AX); fig2.update_yaxes(**AX)
                 st.plotly_chart(fig2,use_container_width=True)
 
 def show_table():
@@ -288,12 +361,12 @@ def show_table():
 def main():
     st.markdown('<h1 class="app-title">📊 BIST FİNANSAL ANALİZ</h1><p class="app-sub">Dip Tarama · DCF Hesaplama · Finansal Tablolar · Canlı Veriler</p>',unsafe_allow_html=True)
     with st.sidebar:
-        st.markdown("## 📁 Veri Yükle")
-        st.markdown('<div class="sidebar-section"><b>Çoklu Dosya:</b><br><br>• 96 dosyanı aynı anda seç<br>• Her sayfa = 1 hisse kodu<br>• Tüm dosyalar birleştirilir<br>• Canlı veri otomatik çekilir</div>',unsafe_allow_html=True)
-        uploaded=st.file_uploader("Excel Dosyaları Yükle",type=["xlsx","xls"],accept_multiple_files=True)
+        st.markdown("## 📁 KAP Dosyaları Yükle")
+        st.markdown('<div class="sidebar-section"><b>KAP Formatı:</b><br><br>• Tüm dosyaları aynı anda seç<br>• Her dosyada birden fazla hisse olabilir<br>• Yıllık (Periyot=4) veriler otomatik okunur<br>• Şirket adından ticker otomatik bulunur</div>',unsafe_allow_html=True)
+        uploaded=st.file_uploader("KAP Excel Dosyaları",type=["xlsx","xls"],accept_multiple_files=True)
         if uploaded:
             with st.spinner(f"{len(uploaded)} dosya işleniyor..."):
-                data,errors=load_files(uploaded)
+                data,errors=load_kap_files(uploaded)
                 st.session_state.financial_data=data
                 st.session_state.live_data={}
             if data: st.success(f"✅ {len(data)} hisse yüklendi")
@@ -302,9 +375,9 @@ def main():
                     [st.caption(e) for e in errors]
         if st.session_state.financial_data:
             st.markdown("---")
-            if st.button("🔄 Canlı Verileri Güncelle",use_container_width=True): st.session_state.live_data={}; st.cache_data.clear(); st.rerun()
+            if st.button("🔄 Verileri Güncelle",use_container_width=True): st.session_state.live_data={}; st.cache_data.clear(); st.rerun()
     if not st.session_state.financial_data:
-        st.markdown('<div style="text-align:center;padding:3rem 2rem;background:#0f1626;border:1px dashed #1e2d42;border-radius:14px;"><div style="font-size:3rem;">📁</div><h2 style="color:#f1f5f9;">Sol menüden Excel dosyalarını yükleyin</h2><p style="color:#475569;">96 dosyayı aynı anda seçebilirsiniz</p></div>',unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;padding:3rem 2rem;background:#0f1626;border:1px dashed #1e2d42;border-radius:14px;"><div style="font-size:3rem;">📁</div><h2 style="color:#f1f5f9;">KAP dosyalarını yükleyin</h2><p style="color:#475569;">Tüm dosyaları aynı anda seçebilirsiniz</p></div>',unsafe_allow_html=True)
         return
     if st.session_state.selected_stock: show_detail(st.session_state.selected_stock)
     else: show_table()
