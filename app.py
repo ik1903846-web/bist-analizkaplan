@@ -87,25 +87,23 @@ TICKER_MAP = {
     "BOSSA TİCARET VE SANAYİ İŞLETMELERİ T.A.Ş.":"BOSSA","DESPEC BİLGİSAYAR PAZARLAMA VE TİCARET A.Ş.":"DESPC",
 }
 
-DATA_FILE = "financial_data.json"
-SKIP_KW = ['PORTFÖY','YATIRIM FONU','MENKUL DEĞERLER A.Ş.','VARLIK KİRALAMA','SUKUK']
+DATA_FILE="financial_data.json"
+SKIP_KW=['PORTFÖY','YATIRIM FONU','MENKUL DEĞERLER A.Ş.','VARLIK KİRALAMA','SUKUK']
 
 for k,v in [("financial_data",{}),("selected_stock",None),("live_data",{})]:
     if k not in st.session_state: st.session_state[k]=v
 
 def save_data(data):
     try:
-        serializable={k:df.to_dict() for k,df in data.items()}
         with open(DATA_FILE,"w",encoding="utf-8") as f:
-            json.dump(serializable,f,ensure_ascii=False)
+            json.dump({k:df.to_dict() for k,df in data.items()},f,ensure_ascii=False)
     except: pass
 
 def load_saved_data():
     try:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE,"r",encoding="utf-8") as f:
-                raw=json.load(f)
-            return {k:pd.DataFrame(v) for k,v in raw.items()}
+                return {k:pd.DataFrame(v) for k,v in json.load(f).items()}
     except: pass
     return {}
 
@@ -160,18 +158,32 @@ def load_kap_files(uploaded_files):
         except Exception as e: errors.append(f"{uf.name}: {e}")
     return data,errors
 
-@st.cache_data(ttl=300,show_spinner=False)
+@st.cache_data(ttl=900,show_spinner=False)
 def fetch_stock(ticker):
     try:
         s=yf.Ticker(f"{ticker}.IS"); i=s.info
-        hist=s.history(period="2y")
+        price=i.get("currentPrice") or i.get("regularMarketPrice") or 0
         prices={}
-        if not hist.empty:
-            hist.index=pd.to_datetime(hist.index)
-            monthly=hist['Close'].resample('ME').last()
-            prices={str(d.strftime('%Y-%m')):float(v) for d,v in monthly.items()}
-        return {"price":i.get("currentPrice") or i.get("regularMarketPrice") or 0,
-                "fk":i.get("trailingPE"),"pddd":i.get("priceToBook"),
+        # Önce TradingView dene
+        try:
+            from tvDatafeed import TvDatafeed,Interval
+            tv=TvDatafeed()
+            hist=tv.get_hist(symbol=ticker,exchange="BIST",interval=Interval.in_weekly,n_bars=104)
+            if hist is not None and not hist.empty:
+                hist.index=pd.to_datetime(hist.index)
+                monthly=hist['close'].resample('ME').last()
+                prices={str(d.strftime('%Y-%m')):float(v) for d,v in monthly.items() if not pd.isna(v)}
+        except: pass
+        # Çalışmazsa yfinance dene
+        if not prices:
+            try:
+                hist2=s.history(period="2y")
+                if not hist2.empty:
+                    hist2.index=pd.to_datetime(hist2.index)
+                    monthly2=hist2['Close'].resample('ME').last()
+                    prices={str(d.strftime('%Y-%m')):float(v) for d,v in monthly2.items() if not pd.isna(v)}
+            except: pass
+        return {"price":price,"fk":i.get("trailingPE"),"pddd":i.get("priceToBook"),
                 "fd_favok":i.get("enterpriseToEbitda"),"market_cap":i.get("marketCap"),
                 "shares":i.get("sharesOutstanding"),"sector":i.get("sector","—"),
                 "name":i.get("longName",ticker),"52w_high":i.get("fiftyTwoWeekHigh"),
@@ -303,8 +315,6 @@ def show_detail(ticker):
             def gs(k):
                 if k not in fin.index: return []
                 return [float(v) if v is not None and not(isinstance(v,float) and np.isnan(v)) else None for v in fin.loc[k].reindex(years)]
-
-            # Bar charts
             fig1=make_subplots(rows=1,cols=3,subplot_titles=("Varlık Artışı","Hasılat","Net Kâr"),horizontal_spacing=.06)
             for key,ci,color in [("TOPLAM VARLIKLAR",1,"#3b82f6"),("HASILAT",2,"#22c55e"),("DÖNEM KARI/ZARARI",3,"#eab308")]:
                 vals=gs(key)
@@ -312,66 +322,26 @@ def show_detail(ticker):
                     fig1.add_trace(go.Bar(x=years,y=vals,marker_color=[color if v and v>0 else "#ef4444" for v in vals],text=[fmt(v,"") for v in vals],textposition="outside",textfont=dict(size=9),showlegend=False),row=1,col=ci)
             fig1.update_layout(**LY,height=350); fig1.update_xaxes(**AX); fig1.update_yaxes(**AX,showticklabels=False)
             st.plotly_chart(fig1,use_container_width=True)
-
-            # Tek grafik: Hasılat + Net Kar + Fiyat + Piyasa Değeri
             price_hist=info.get("price_history") or {}
             rev=gs("HASILAT"); ni=gs("DÖNEM KARI/ZARARI")
-
             fig2=go.Figure()
-
-            # Hasılat (sol eksen)
             if any(v is not None for v in rev):
-                fig2.add_trace(go.Scatter(
-                    x=years, y=rev, name="Hasılat",
-                    line=dict(color="#3b82f6",width=2.5),
-                    mode="lines+markers+text",
-                    text=[fmt(v,"") for v in rev],
-                    textposition="top center",
-                    textfont=dict(size=8,color="#3b82f6"),
-                    yaxis="y1"
-                ))
-
-            # Net Kar (sol eksen)
+                fig2.add_trace(go.Scatter(x=years,y=rev,name="Hasılat",line=dict(color="#3b82f6",width=2.5),mode="lines+markers+text",text=[fmt(v,"") for v in rev],textposition="top center",textfont=dict(size=8,color="#3b82f6"),yaxis="y1"))
             if any(v is not None for v in ni):
-                fig2.add_trace(go.Scatter(
-                    x=years, y=ni, name="Net Kâr",
-                    line=dict(color="#22c55e",width=2.5),
-                    mode="lines+markers+text",
-                    text=[fmt(v,"") for v in ni],
-                    textposition="bottom center",
-                    textfont=dict(size=8,color="#22c55e"),
-                    yaxis="y1"
-                ))
-
-            # Hisse Fiyatı (sağ eksen)
+                fig2.add_trace(go.Scatter(x=years,y=ni,name="Net Kâr",line=dict(color="#22c55e",width=2.5),mode="lines+markers+text",text=[fmt(v,"") for v in ni],textposition="bottom center",textfont=dict(size=8,color="#22c55e"),yaxis="y1"))
             if price_hist:
                 dates=sorted(price_hist.keys())
-                prices=[price_hist[d] for d in dates]
-                fig2.add_trace(go.Scatter(
-                    x=dates, y=prices, name="Hisse Fiyatı (₺)",
-                    line=dict(color="#eab308",width=2,dash="dot"),
-                    mode="lines",
-                    yaxis="y2"
-                ))
-
-            # Piyasa Değeri (sağ eksen - milyar)
-            if price_hist and shares:
-                dates=sorted(price_hist.keys())
-                mcap_vals=[price_hist[d]*shares/1e9 for d in dates]
-                fig2.add_trace(go.Scatter(
-                    x=dates, y=mcap_vals, name="Piyasa Değeri (B₺)",
-                    line=dict(color="#a855f7",width=2,dash="dashdot"),
-                    mode="lines",
-                    yaxis="y2"
-                ))
-
-            fig2.update_layout(
-                **LY, height=420,
-                title_text="📊 Gelir Trendi · Fiyat · Piyasa Değeri",
+                prices_vals=[price_hist[d] for d in dates]
+                fig2.add_trace(go.Scatter(x=dates,y=prices_vals,name="Hisse Fiyatı (₺)",line=dict(color="#eab308",width=2),mode="lines",yaxis="y2"))
+                if shares:
+                    mcap_vals=[price_hist[d]*shares/1e9 for d in dates]
+                    fig2.add_trace(go.Scatter(x=dates,y=mcap_vals,name="Piyasa Değeri (B₺)",line=dict(color="#a855f7",width=2,dash="dashdot"),mode="lines",yaxis="y2"))
+            if not price_hist:
+                st.caption("⚠️ Bu hisse için fiyat geçmişi bulunamadı.")
+            fig2.update_layout(**LY,height=420,title_text="📊 Gelir Trendi · Fiyat · Piyasa Değeri",
                 legend=dict(bgcolor="#131d30",bordercolor="#1e2d42",orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1),
                 yaxis=dict(title="Finansal (₺)",gridcolor="#1e2d42",tickfont=dict(size=9,color="#64748b"),side="left"),
-                yaxis2=dict(title="Fiyat / PD (₺ / B₺)",overlaying="y",side="right",gridcolor="rgba(0,0,0,0)",tickfont=dict(size=9,color="#eab308"),showgrid=False)
-            )
+                yaxis2=dict(title="Fiyat / PD",overlaying="y",side="right",gridcolor="rgba(0,0,0,0)",tickfont=dict(size=9,color="#eab308"),showgrid=False))
             fig2.update_xaxes(**AX)
             st.plotly_chart(fig2,use_container_width=True)
 
