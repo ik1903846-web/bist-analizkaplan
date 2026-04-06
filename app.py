@@ -164,25 +164,13 @@ def fetch_stock(ticker):
         s=yf.Ticker(f"{ticker}.IS"); i=s.info
         price=i.get("currentPrice") or i.get("regularMarketPrice") or 0
         prices={}
-        # Önce TradingView dene
         try:
-            from tvDatafeed import TvDatafeed,Interval
-            tv=TvDatafeed()
-            hist=tv.get_hist(symbol=ticker,exchange="BIST",interval=Interval.in_weekly,n_bars=104)
-            if hist is not None and not hist.empty:
+            hist=s.history(period="2y")
+            if not hist.empty:
                 hist.index=pd.to_datetime(hist.index)
-                monthly=hist['close'].resample('ME').last()
+                monthly=hist['Close'].resample('ME').last()
                 prices={str(d.strftime('%Y-%m')):float(v) for d,v in monthly.items() if not pd.isna(v)}
         except: pass
-        # Çalışmazsa yfinance dene
-        if not prices:
-            try:
-                hist2=s.history(period="2y")
-                if not hist2.empty:
-                    hist2.index=pd.to_datetime(hist2.index)
-                    monthly2=hist2['Close'].resample('ME').last()
-                    prices={str(d.strftime('%Y-%m')):float(v) for d,v in monthly2.items() if not pd.isna(v)}
-            except: pass
         return {"price":price,"fk":i.get("trailingPE"),"pddd":i.get("priceToBook"),
                 "fd_favok":i.get("enterpriseToEbitda"),"market_cap":i.get("marketCap"),
                 "shares":i.get("sharesOutstanding"),"sector":i.get("sector","—"),
@@ -331,13 +319,12 @@ def show_detail(ticker):
                 fig2.add_trace(go.Scatter(x=years,y=ni,name="Net Kâr",line=dict(color="#22c55e",width=2.5),mode="lines+markers+text",text=[fmt(v,"") for v in ni],textposition="bottom center",textfont=dict(size=8,color="#22c55e"),yaxis="y1"))
             if price_hist:
                 dates=sorted(price_hist.keys())
-                prices_vals=[price_hist[d] for d in dates]
-                fig2.add_trace(go.Scatter(x=dates,y=prices_vals,name="Hisse Fiyatı (₺)",line=dict(color="#eab308",width=2),mode="lines",yaxis="y2"))
+                pvals=[price_hist[d] for d in dates]
+                fig2.add_trace(go.Scatter(x=dates,y=pvals,name="Hisse Fiyatı (₺)",line=dict(color="#eab308",width=2),mode="lines",yaxis="y2"))
                 if shares:
-                    mcap_vals=[price_hist[d]*shares/1e9 for d in dates]
-                    fig2.add_trace(go.Scatter(x=dates,y=mcap_vals,name="Piyasa Değeri (B₺)",line=dict(color="#a855f7",width=2,dash="dashdot"),mode="lines",yaxis="y2"))
-            if not price_hist:
-                st.caption("⚠️ Bu hisse için fiyat geçmişi bulunamadı.")
+                    fig2.add_trace(go.Scatter(x=dates,y=[price_hist[d]*shares/1e9 for d in dates],name="Piyasa Değeri (B₺)",line=dict(color="#a855f7",width=2,dash="dashdot"),mode="lines",yaxis="y2"))
+            else:
+                st.caption("⚠️ Bu hisse için fiyat geçmişi bulunamadı (yfinance'de kayıtlı değil).")
             fig2.update_layout(**LY,height=420,title_text="📊 Gelir Trendi · Fiyat · Piyasa Değeri",
                 legend=dict(bgcolor="#131d30",bordercolor="#1e2d42",orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1),
                 yaxis=dict(title="Finansal (₺)",gridcolor="#1e2d42",tickfont=dict(size=9,color="#64748b"),side="left"),
